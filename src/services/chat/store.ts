@@ -1,10 +1,13 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
-import type { ChatModel, CreateMessageRequest } from '../api/types.js'
+import type { ChatModel, CreateMessageRequest, MessageStreamEvent } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
-import { useSettings } from '../settings.js'
+import { isLocalFileId, LOCAL_FILE_PREFIX, type LocalFile } from '../providers/parts.js'
+import { streamChat } from '../providers/stream.js'
+import { getCapabilities, type ProviderConfig } from '../providers/types.js'
+import { getActiveProvider, useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
 import {
@@ -19,6 +22,7 @@ import {
   applyEvent,
   canContinueReply,
   getContextRounds,
+  localFileRef,
   settleReply,
   toRequestMessages,
 } from './reply.js'
@@ -34,8 +38,27 @@ import {
 
 /** deepseek-flash 同时支持深度思考与图片输入 */
 const MODEL: ChatModel = 'deepseek-flash'
-/** 所有生成请求统一携带的助手身份说明 */
+/** DeepSeek 请求统一携带的助手身份说明；其他平台不设身份，只附带环境信息 */
 const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
+/** 非 DeepSeek 平台没有服务端标题，用首条提问截取 */
+const FALLBACK_TITLE_LENGTH = 30
+
+/** 回复所属的平台：按记录的 id 查找，找不到（已删除或旧数据）时用当前平台 */
+const getReplyProvider = (reply: AssistantMessage): ProviderConfig => {
+  const { providers } = useSettings.getState()
+  return providers.find((item) => item.id === reply.providerId) ?? getActiveProvider()
+}
+
+/** 当前平台下一条回复能否作为续写前缀 */
+const canPrefill = (provider: ProviderConfig, thinking: boolean) => {
+  const { prefill } = getCapabilities(provider.protocol)
+  return thinking ? prefill.thinking : prefill.plain
+}
+
+const fallbackTitle = (question: UserMessage) => {
+  const text = question.content.trim().split('\n')[0] || question.files[0]?.name || ''
+  return text.length > FALLBACK_TITLE_LENGTH ? `${text.slice(0, FALLBACK_TITLE_LENGTH)}…` : text
+}
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
 const SESSION_CACHE_LIMIT = 5
 /** 安全审核固定开启，所有请求都走扩展模式 */
@@ -256,14 +279,16 @@ export const bindChatPersistence = () => {
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
   const { thinking, search } = useSettings.getState()
+  const provider = getActiveProvider()
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
-    model: MODEL,
+    model: provider.model || (provider.protocol === 'deepseek' ? MODEL : null),
+    providerId: provider.id,
     thinking,
-    search,
-    prefix: true,
+    search: search && getCapabilities(provider.protocol).search,
+    prefix: canPrefill(provider, thinking),
     status: 'pending',
     blocks: [],
   }
@@ -709,7 +734,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
   const reply: AssistantMessage = {
     ...previous,
     // 未记录请求配置的回复，续写时使用默认模型和当前开关。
-    model: previous.model ?? MODEL,
+    model: previous.model ?? (getReplyProvider(previous).model || MODEL),
     thinking: previous.thinking ?? thinking,
     search: previous.search ?? search,
     status: 'pending',
@@ -777,11 +802,12 @@ const saveServerIds = (sessionId: string, serverIds: Map<string, string>) => {
  * 本地也没有原件（导入的文档附件只有元数据）时返回 null，该附件只展示、不进入请求。
  */
 const ensureServerId = async (apiKey: string, file: FileAttachment): Promise<string | null> => {
-  if (file.serverId) {
+  // local:<id> 是在其他平台下添加的附件，切到 DeepSeek 时需要真正上传
+  if (file.serverId && !isLocalFileId(file.serverId)) {
     return file.serverId
   }
   const task = useUploads.getState().tasks[file.id]
-  if (task?.status === 'done') {
+  if (task?.status === 'done' && !isLocalFileId(task.serverId)) {
     return task.serverId
   }
   const blob = await db.loadFile(file.id)
@@ -846,7 +872,11 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   const pending = new Map<string, FileAttachment>()
   for (const [user] of getContextRounds(request.history).toReversed()) {
     for (const file of user.files) {
-      if (!file.serverId && !serverIds.has(file.id) && !pending.has(file.id)) {
+      if (
+        (!file.serverId || isLocalFileId(file.serverId)) &&
+        !serverIds.has(file.id) &&
+        !pending.has(file.id)
+      ) {
         pending.set(file.id, file)
       }
     }
@@ -955,6 +985,29 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
   })
 
 /**
+ * 非 DeepSeek 平台按 local:<id> 读取附件原件：刚发送的附件可能还没落盘，先查待保存的原件，再查 IndexedDB。
+ */
+const createFileLoader =
+  (sessionId: string, request: Request) =>
+  async (ref: string): Promise<LocalFile | null> => {
+    if (!ref.startsWith(LOCAL_FILE_PREFIX)) {
+      return null
+    }
+    const id = ref.slice(LOCAL_FILE_PREFIX.length)
+    const meta = [request.question, ...request.history]
+      .flatMap((message) => (message.role === 'user' ? message.files : []))
+      .find((file) => file.id === id)
+    if (!meta) {
+      return null
+    }
+    const blob =
+      pendingFiles.get(sessionId)?.find((file) => file.id === id)?.blob ?? (await db.loadFile(id))
+    return blob
+      ? { name: meta.name, mimeType: meta.mimeType || blob.type, isImage: meta.isImage, blob }
+      : null
+  }
+
+/**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
  * 补传失败时回复记为 upload 错误，可重试。
  * 服务端判定 file_id 失效时重新补传后重发，退避重试且次数有上限，超过则按原始报错收尾。
@@ -980,7 +1033,12 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       let preparing = true
       let receivedContent = false
       try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
+        const provider = getReplyProvider(initial)
+        const deepseek = provider.protocol === 'deepseek'
+        // 非 DeepSeek 平台不经 Files API，附件在请求里内联，不需要补传
+        const prepared = deepseek
+          ? await prepareFiles(sessionId, request, controller.signal)
+          : refreshRequest(sessionId, request)
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
@@ -994,21 +1052,32 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           prepared.question,
           prepared.prefix,
           initial.thinking ?? false,
-          latestReminder
+          latestReminder,
+          deepseek ? undefined : localFileRef
         )
-        const events = streamMessage(
-          useSettings.getState().apiKey ?? '',
-          {
-            model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
+        const events: AsyncGenerator<MessageStreamEvent> = deepseek
+          ? streamMessage(
+              provider.apiKey,
+              {
+                model: (initial.model ?? MODEL) as ChatModel,
+                system: SYSTEM_PROMPT,
+                messages,
+                thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+                safety_check: SAFETY_CHECK,
+                tools: serverTools(initial.search ?? false),
+                ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+              },
+              controller.signal
+            )
+          : streamChat({
+              provider,
+              model: initial.model ?? provider.model,
+              system: '',
+              messages,
+              thinking: initial.thinking ?? false,
+              loadFile: createFileLoader(sessionId, prepared),
+              signal: controller.signal,
+            })
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
@@ -1032,6 +1101,18 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        if (
+          !deepseek &&
+          titleRequests.has(controller) &&
+          !get().importingHistory &&
+          reply.stopReason !== 'refusal'
+        ) {
+          const title = fallbackTitle(prepared.question)
+          if (title) {
+            updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+          }
+          titleRequests.delete(controller)
+        }
         break
       } catch (error) {
         if (controller.signal.aborted) {

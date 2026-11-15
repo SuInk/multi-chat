@@ -3,6 +3,7 @@ import type { LinkedMessage, TranslationMessage } from '../i18n/index.js'
 import { uploadFile } from './api/client.js'
 import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api/errors.js'
 import type { FilePurpose } from './api/types.js'
+import { LOCAL_FILE_PREFIX } from './providers/parts.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 
 /** 允许上传的扩展名，按扩展名白名单过滤，清单见 uploadExts.ts */
@@ -169,8 +170,15 @@ export const uploadAttachment = (
   id: string,
   blob: Blob,
   name: string,
-  isImage: boolean
+  isImage: boolean,
+  /** 不上传：非 DeepSeek 平台在请求里内联附件，任务直接以 local:<id> 完成 */
+  local = false
 ): Promise<string> => {
+  if (local) {
+    const serverId = `${LOCAL_FILE_PREFIX}${id}`
+    setTask(id, { status: 'done', serverId })
+    return Promise.resolve(serverId)
+  }
   const current = pending.get(id)
   if (current) {
     return current.promise

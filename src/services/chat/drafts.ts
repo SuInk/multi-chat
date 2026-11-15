@@ -9,6 +9,8 @@ import {
   validateFiles,
   type UploadTask,
 } from '../attachments.js'
+import { getCapabilities } from '../providers/types.js'
+import { getActiveProvider } from '../settings.js'
 import type { FileAttachment } from './types.js'
 
 export type DraftAttachment = {
@@ -53,7 +55,8 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
     attachment.id,
     attachment.file,
     attachment.file.name,
-    attachment.isImage
+    attachment.isImage,
+    !getCapabilities(getActiveProvider().protocol).remoteFiles
   ).catch(() => {})
 }
 

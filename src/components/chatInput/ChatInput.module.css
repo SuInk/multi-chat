@@ -330,3 +330,18 @@
     cursor: not-allowed;
   }
 }
+
+/* 平台与模型切换：与开关同高，过长时省略 */
+.modelSelect {
+  min-width: 0;
+  max-width: 220px;
+  height: 34px;
+  padding-right: 34px;
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .modelSelect {
+    max-width: 140px;
+  }
+}

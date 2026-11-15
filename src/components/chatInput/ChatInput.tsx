@@ -7,7 +7,8 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
-import { setSearch, setThinking, useSettings } from '../../services/settings.js'
+import { getCapabilities } from '../../services/providers/types.js'
+import { selectProvider, setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
@@ -22,6 +23,7 @@ import {
 } from '../../services/chat/drafts.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
+import { Select } from '../base/Select.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
@@ -53,6 +55,18 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
+  const providers = useSettings((state) => state.providers)
+  const activeProviderId = useSettings((state) => state.activeProviderId)
+  const activeProvider =
+    providers.find((item) => item.id === activeProviderId) ?? providers[0]
+  const capabilities = getCapabilities(activeProvider.protocol)
+  // 每个平台的可选模型都列出来，选中即切换平台与模型
+  const modelOptions = providers.flatMap((provider) =>
+    [...new Set([provider.model, ...provider.models].filter(Boolean))].map((model) => ({
+      value: `${provider.id}\n${model}`,
+      label: providers.length > 1 ? `${provider.name} · ${model}` : model,
+    }))
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const togglesRef = useRef<HTMLDivElement>(null)
@@ -214,33 +228,50 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
             </button>
           </Tooltip>
-          <Tooltip content={t('deactivatedSearchTooltip')}>
-            <button
-              type="button"
-              className={clsx(styles.toggle, search && styles.selected)}
-              aria-label={t('search')}
-              aria-pressed={search}
-              onClick={() => setSearch(!search)}
-            >
-              <IconGlobeLanguageOutline14 />
-              <span className={styles.toggleLabel}>{t('search')}</span>
-            </button>
-          </Tooltip>
+          {capabilities.search ? (
+            <Tooltip content={t('deactivatedSearchTooltip')}>
+              <button
+                type="button"
+                className={clsx(styles.toggle, search && styles.selected)}
+                aria-label={t('search')}
+                aria-pressed={search}
+                onClick={() => setSearch(!search)}
+              >
+                <IconGlobeLanguageOutline14 />
+                <span className={styles.toggleLabel}>{t('search')}</span>
+              </button>
+            </Tooltip>
+          ) : null}
         </div>
         <div className={styles.right}>
-          <VoiceButton
-            status={voice.status}
-            disabled={!voice.available}
-            seconds={voice.seconds}
-            onClick={() => {
-              if (
-                voice.status !== 'idle' ||
-                (!useChatStore.getState().importingHistory && ensureApiKey())
-              ) {
-                void voice.toggle()
-              }
-            }}
-          />
+          {modelOptions.length > 0 ? (
+            <Select
+              ariaLabel={t('providerSwitchModel')}
+              className={styles.modelSelect}
+              value={`${activeProvider.id}\n${activeProvider.model}`}
+              options={modelOptions}
+              placeholder={activeProvider.name}
+              onChange={(value) => {
+                const [id, model] = value.split('\n')
+                selectProvider(id, model)
+              }}
+            />
+          ) : null}
+          {capabilities.speech ? (
+            <VoiceButton
+              status={voice.status}
+              disabled={!voice.available}
+              seconds={voice.seconds}
+              onClick={() => {
+                if (
+                  voice.status !== 'idle' ||
+                  (!useChatStore.getState().importingHistory && ensureApiKey())
+                ) {
+                  void voice.toggle()
+                }
+              }}
+            />
+          ) : null}
           <IconButton
             size="m"
             tone="primary"

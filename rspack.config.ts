@@ -5,6 +5,8 @@ import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 
 const dev = process.env.NODE_ENV !== 'production'
+/** BUILD_TARGET=extension 时输出浏览器扩展（Manifest V3），扩展页面直连接口不受跨域限制 */
+const extension = process.env.BUILD_TARGET === 'extension'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
 const { version } = JSON.parse(
@@ -31,7 +33,7 @@ export const createConfig = ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
   output: {
-    path: path.resolve(root, 'dist'),
+    path: path.resolve(root, extension ? 'dist-extension' : 'dist'),
     // 运行时按当前脚本地址推导资源路径，file:// 下异步 chunk、字体都按相对位置加载
     publicPath: 'auto',
     filename: 'static/js/[name].[contenthash:8].js',
@@ -82,7 +84,15 @@ export const createConfig = ({
     }),
     new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+      patterns: [
+        { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+        ...(extension
+          ? [
+              { from: path.resolve(root, 'src/extension/manifest.json'), to: 'manifest.json' },
+              { from: path.resolve(root, 'src/extension/background.js'), to: 'background.js' },
+            ]
+          : []),
+      ],
     }),
   ],
   performance: { hints: false },

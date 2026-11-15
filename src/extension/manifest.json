@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "multi-chat",
+  "description": "多平台 AI 聊天：DeepSeek、OpenAI、Anthropic、Gemini 及兼容接口。扩展页面直连接口，不受浏览器跨域限制。",
+  "version": "0.2.0",
+  "action": { "default_title": "打开 Chat Demo" },
+  "background": { "service_worker": "background.js" },
+  "permissions": [],
+  "host_permissions": ["https://api.deepseek.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

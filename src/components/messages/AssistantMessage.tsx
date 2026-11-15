@@ -6,6 +6,8 @@ import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
 import { continueReply, regenerateReply } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
+import { getCapabilities } from '../../services/providers/types.js'
+import { getActiveProvider, useSettings } from '../../services/settings.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
 import { openSettings } from '../settings/settingsDialogState.js'
 import { IconButton } from '../base/IconButton.js'
@@ -43,6 +45,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   versions: MessageVersions
   onSelectVersion: SelectMessageVersion
 }) {
+  // 朗读走 DeepSeek 的 TTS 接口，其他平台不显示
+  const speech = useSettings((state) => getCapabilities(getActiveProvider(state).protocol).speech)
   const t = useTranslate()
   const view = useReplyView(message, streaming)
   const panelEntry = useSearchPanel((state) => state.entry)
@@ -102,7 +106,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                 <button
                   type="button"
                   className={styles.noticeAction}
-                  onClick={() => openSettings('data')}
+                  onClick={() => openSettings('providers')}
                 >
                   {t('changeApiKey')}
                 </button>
@@ -143,7 +147,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           <BranchSwitcher versions={versions} disabled={busy} onSelect={onSelectVersion} />
           <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
             {copyText ? <CopyButton text={copyText} /> : null}
-            {responseText && !refused ? (
+            {speech && responseText && !refused ? (
               <ReadAloudButton messageId={message.id} text={responseText} />
             ) : null}
             <IconButton

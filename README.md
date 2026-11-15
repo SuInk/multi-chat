@@ -1,18 +1,29 @@
-# chat-demo
+# multi-chat
 
 English | [简体中文](README.zh-CN.md)
 
-A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
+A frontend-only, multi-provider AI chat app. Use DeepSeek, OpenAI, Claude, Gemini, and OpenAI-compatible services (OpenRouter, Ollama, relays such as sub2api) from one interface. There is no backend: the browser talks directly to the APIs you configure, and the browser-extension build is not limited by CORS.
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+Based on DeepSeek's open-source [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). This is not an official DeepSeek project.
+
+## What's different
+
+- **Multiple providers**: add providers in Settings by picking a provider type and a service, then entering an API key. "Fetch models" lists every available model; click to pick one or type to filter.
+- **Switch any time**: change provider and model from the input box, even mid-conversation; history is converted to the target protocol.
+- **Deep thinking** on all five protocols (DeepSeek, OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini). If a service rejects reasoning parameters, the request is retried without them and the provider/model pair is remembered.
+- **Attachments** on non-DeepSeek providers: images and PDFs are inlined, text files are sent as text; no Files API needed.
+- **Browser extension**: `pnpm build:extension` produces a Chrome / Edge extension that requests host access per provider, so CORS is not an issue.
+- All original DeepSeek features are kept: web search, link reading, speech, file uploads, and automatic titles.
+
+To load the extension, open `chrome://extensions`, enable Developer mode, choose "Load unpacked", and select `dist-extension/`.
 
 ## Getting started
 
 Install Node.js 22.12+ and pnpm, then run:
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/SuInk/multi-chat.git
+cd multi-chat
 pnpm install
 pnpm dev
 ```
@@ -49,6 +60,7 @@ Settings → Data → Delete all chats clears all local conversations, original 
 | ------------- | ---------------------------- |
 | `pnpm dev`    | Start the development server |
 | `pnpm build`  | Build into `dist/`           |
+| `pnpm build:extension` | Build the browser extension into `dist-extension/` |
 | `pnpm type`   | Run TypeScript type checks   |
 | `pnpm lint`   | Lint with oxlint             |
 | `pnpm format` | Format with oxfmt            |

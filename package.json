@@ -1,13 +1,14 @@
 {
-  "name": "chat-demo",
+  "name": "multi-chat",
   "version": "0.1.1",
-  "description": "基于 DeepSeek API 的静态聊天示例。",
+  "description": "纯前端的多平台 AI 聊天应用，基于 deepseek-ai/chat-demo。",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
     "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
+    "build:extension": "rm -rf dist-extension && NODE_ENV=production BUILD_TARGET=extension rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write ."

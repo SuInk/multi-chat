@@ -33,6 +33,16 @@ declare const styles: {
   readonly "importConfirmText": string;
   readonly "deleteConfirm": string;
   readonly "deleteActions": string;
+  readonly "providerBadge": string;
+  readonly "providerAdd": string;
+  readonly "providerEditor": string;
+  readonly "providerField": string;
+  readonly "providerModelRow": string;
+  readonly "providerActions": string;
+  readonly "providerSpacer": string;
+  readonly "providerModels": string;
+  readonly "providerModelChip": string;
+  readonly "providerModelChipActive": string;
 };
 export = styles;
 

@@ -14,22 +14,32 @@ import type {
   ReplyStatus,
   UserMessage,
 } from './types.js'
+import { isLocalFileId, LOCAL_FILE_PREFIX } from '../providers/parts.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
  * 发送前 streamReply 会先补齐 serverId；仍为 null 的是本地没有原件的附件，不进入请求。
  */
-const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
-  files.flatMap(({ serverId, isImage }) =>
-    serverId
+/** 附件在请求里的引用：DeepSeek 用 Files API 的 file_id，其他平台用 local:<本地 id>，返回 null 表示不进入请求 */
+export type FileRef = (file: FileAttachment) => string | null
+
+export const serverFileRef: FileRef = ({ serverId }) =>
+  serverId && !isLocalFileId(serverId) ? serverId : null
+
+export const localFileRef: FileRef = ({ id }) => `${LOCAL_FILE_PREFIX}${id}`
+
+const toFileBlocks = (files: FileAttachment[], ref: FileRef = serverFileRef): FileBlockParam[] =>
+  files.flatMap((file) => {
+    const fileId = ref(file)
+    return fileId
       ? [
           {
-            type: isImage ? 'image' : 'document',
-            source: { type: 'file', file_id: serverId },
+            type: file.isImage ? 'image' : 'document',
+            source: { type: 'file', file_id: fileId },
           },
         ]
       : []
-  )
+  })
 
 const toReplyBlock = (block: OutputBlockStart, now: number): ReplyBlock | null => {
   switch (block.type) {
@@ -202,8 +212,8 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   getReplyText(message) !== ''
 
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
-  const blocks = toFileBlocks(files)
+const toUserParam = ({ content, files }: UserMessage, ref?: FileRef): MessageParam => {
+  const blocks = toFileBlocks(files, ref)
   return blocks.length === 0
     ? { role: 'user', content }
     : {
@@ -305,7 +315,8 @@ export const toRequestMessages = (
   question: UserMessage,
   prefix?: AssistantMessage,
   thinking = prefix?.thinking ?? false,
-  latestReminder?: string
+  latestReminder?: string,
+  ref: FileRef = serverFileRef
 ): MessageParam[] => {
   const messages: MessageParam[] = []
   let previousReminder: string | undefined
@@ -318,14 +329,14 @@ export const toRequestMessages = (
   }
   for (const [user, reply] of getContextRounds(history)) {
     // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
-    if (!user.content && toFileBlocks(user.files).length === 0) {
+    if (!user.content && toFileBlocks(user.files, ref).length === 0) {
       continue
     }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply))
+    messages.push(toUserParam(user, ref), toAssistantParam(reply))
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  messages.push(toUserParam(question, ref))
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。
