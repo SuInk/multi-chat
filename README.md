@@ -13,6 +13,7 @@
 - **深度思考**：五种协议都支持。服务端不认推理参数时，会自动去掉参数重发，并记住这个平台和模型。
 - **附件**：在非 DeepSeek 平台上，图片和 PDF 直接内联进请求，文本文件按原文发送，不依赖 Files API。
 - **浏览器扩展**：一条命令打包成 Chrome / Edge 扩展。扩展会按平台地址申请访问权限，不受跨域限制。
+- **桌面与手机 App**：打包成 macOS / Windows / Linux / iOS / Android 应用，界面不变，请求原生发出，不受跨域限制。
 - DeepSeek 原有的能力全部保留：联网搜索、阅读链接、语音、文件上传、自动标题。
 
 ## 运行
@@ -70,6 +71,29 @@ pnpm build:extension
 
 在 Chrome / Edge 打开 `chrome://extensions`，开启开发者模式，「加载已解压的扩展程序」选择 `dist-extension/`，点击工具栏图标打开。扩展默认只能访问 `api.deepseek.com`；在模型平台中保存或获取模型列表时，会按该平台地址申请访问权限。
 
+## 桌面与手机 App
+
+用 [Tauri 2](https://tauri.app) 把同一套界面打包成 macOS / Windows / Linux / iOS / Android 应用。界面与网页版完全一致，所有接口请求都由 App 原生发出，不受跨域限制，不用装扩展也不用代理。会话和设置照样只存在本机。
+
+需要先装好 [Rust](https://rustup.rs) 和 pnpm：
+
+```sh
+pnpm app:dev      # 开发模式运行桌面版
+pnpm app:build    # 打包桌面安装包，产物在 src-tauri/target/release/bundle/
+```
+
+iOS（需要 Xcode）：
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+pnpm tauri ios dev       # 在模拟器或真机上运行
+pnpm app:ios-sim         # 打包模拟器版并安装到已启动的模拟器
+```
+
+`pnpm tauri ios dev/build` 要求模拟器运行时版本和 Xcode 一致，不一致时用 `pnpm app:ios-sim`。装到真机需要在 `src-tauri/tauri.conf.json` 的 `bundle.iOS.developmentTeam` 填上你的 Apple 开发者团队 ID。
+
+Android 需要 JDK 17、Android SDK 和 NDK，装好后运行 `pnpm tauri android init`，再用 `pnpm tauri android build` 打包 APK。
+
 ## 数据
 
 API Key 和设置保存在浏览器 localStorage，会话及附件原件保存在 IndexedDB，本地数据按浏览器用户配置和站点源（origin）隔离。发送对话、上传附件和使用语音功能时，相应内容会提交给配置的 API 服务。
@@ -85,6 +109,7 @@ API Key 和设置保存在浏览器 localStorage，会话及附件原件保存�
 | `pnpm dev`    | 启动开发服务器      |
 | `pnpm build`  | 构建到 `dist/`      |
 | `pnpm build:extension` | 构建浏览器扩展到 `dist-extension/` |
+| `pnpm app:dev` / `pnpm app:build` | 运行 / 打包桌面 App |
 | `pnpm type`   | TypeScript 类型检查 |
 | `pnpm lint`   | oxlint 检查         |
 | `pnpm format` | oxfmt 格式化        |

@@ -1,0 +1,16 @@
+[package]
+name = "multi-chat"
+version = "0.1.1"
+description = "multi-chat 桌面与手机客户端"
+edition = "2021"
+
+[lib]
+name = "multi_chat_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }

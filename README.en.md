@@ -13,6 +13,7 @@ Based on DeepSeek's open-source [deepseek-ai/chat-demo](https://github.com/deeps
 - **Deep thinking** on all five protocols (DeepSeek, OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Gemini). If a service rejects reasoning parameters, the request is retried without them and the provider/model pair is remembered.
 - **Attachments** on non-DeepSeek providers: images and PDFs are inlined, text files are sent as text; no Files API needed.
 - **Browser extension**: `pnpm build:extension` produces a Chrome / Edge extension that requests host access per provider, so CORS is not an issue.
+- **Desktop and mobile apps**: the same UI packaged for macOS, Windows, Linux, iOS, and Android with native networking.
 - All original DeepSeek features are kept: web search, link reading, speech, file uploads, and automatic titles.
 
 To load the extension, open `chrome://extensions`, enable Developer mode, choose "Load unpacked", and select `dist-extension/`.
@@ -45,6 +46,19 @@ The output is written to `dist/`. Deploy it to a static web server or open `dist
 - Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
 - Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
 - Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+
+## Desktop and mobile apps
+
+The same UI is packaged with [Tauri 2](https://tauri.app) for macOS, Windows, Linux, iOS, and Android. Requests are sent natively, so CORS never applies and no extension or proxy is needed. Install [Rust](https://rustup.rs) and pnpm, then:
+
+```sh
+pnpm app:dev            # run the desktop app in development
+pnpm app:build          # build desktop installers into src-tauri/target/release/bundle/
+pnpm tauri ios dev      # run on an iOS simulator or device (requires Xcode)
+pnpm app:ios-sim        # build for the simulator when its runtime does not match Xcode
+```
+
+Android requires JDK 17, the Android SDK, and the NDK: run `pnpm tauri android init`, then `pnpm tauri android build`.
 
 ## Data and storage
 

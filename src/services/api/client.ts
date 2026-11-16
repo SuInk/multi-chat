@@ -76,10 +76,24 @@ const readErrorResponse = async (
   return new ApiError(kind, message, response.status)
 }
 
+/** 桌面 / 手机 App（Tauri）里改走原生网络请求，不受浏览器跨域限制；网页版仍用浏览器 fetch */
+const isNativeApp = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+type Fetch = (url: string, init: RequestInit) => Promise<Response>
+
+let nativeFetch: Promise<Fetch> | null = null
+const platformFetch: Fetch = (input, init) => {
+  if (!isNativeApp()) {
+    return fetch(input, init)
+  }
+  nativeFetch ??= import('@tauri-apps/plugin-http').then((module) => module.fetch as Fetch)
+  return nativeFetch.then((run) => run(input, init))
+}
+
 export const request = async (url: string, init: RequestInit): Promise<Response> => {
   let response: Response
   try {
-    response = await fetch(url, init)
+    response = await platformFetch(url, init)
   } catch (error) {
     if (init.signal?.aborted) {
       throw error
